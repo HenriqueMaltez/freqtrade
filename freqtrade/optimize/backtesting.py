@@ -24,8 +24,8 @@ from freqtrade.enums import (BacktestState, CandleType, ExitCheckTuple, ExitType
                              TradingMode)
 from freqtrade.exceptions import DependencyException, OperationalException
 from freqtrade.exchange import timeframe_to_minutes, timeframe_to_seconds
-from freqtrade.misc import get_strategy_run_id
 from freqtrade.mixins import LoggingMixin
+from freqtrade.optimize.backtest_caching import get_strategy_run_id
 from freqtrade.optimize.bt_progress import BTProgress
 from freqtrade.optimize.optimize_reports import (generate_backtest_stats, show_backtest_results,
                                                  store_backtest_signal_candles,
@@ -269,10 +269,18 @@ class Backtesting:
                 candle_type=CandleType.from_string(self.exchange._ft_has["mark_ohlcv_price"])
             )
             # Combine data to avoid combining the data per trade.
+            unavailable_pairs = []
             for pair in self.pairlists.whitelist:
+                if pair not in self.exchange._leverage_tiers:
+                    unavailable_pairs.append(pair)
+                    continue
                 self.futures_data[pair] = funding_rates_dict[pair].merge(
                     mark_rates_dict[pair], on='date', how="inner", suffixes=["_fund", "_mark"])
 
+            if unavailable_pairs:
+                raise OperationalException(
+                        f"Pairs {', '.join(unavailable_pairs)} got no leverage tiers available. "
+                        "It is therefore impossible to backtest with this pair at the moment.")
         else:
             self.futures_data = {}
 
